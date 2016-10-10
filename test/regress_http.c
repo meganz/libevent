@@ -478,7 +478,7 @@ http_basic_test_impl(void *arg, int ssl)
 
 	bufferevent_write(bev, http_request, strlen(http_request));
 	evutil_timerclear(&tv);
-	tv.tv_usec = 10000;
+	tv.tv_usec = 100000;
 	event_base_once(data->base,
 	    -1, EV_TIMEOUT, http_complete_write, bev, &tv);
 
@@ -1388,10 +1388,10 @@ http_cancel_test(void *arg)
 	struct evhttp *inactive_http = NULL;
 	struct event_base *inactive_base = NULL;
 	struct evhttp_connection **evcons = NULL;
+	struct event_base *base_to_fill = data->base;
 
-	enum http_cancel_test_type type;
-	type = (enum http_cancel_test_type)data->setup_data;
-
+	enum http_cancel_test_type type =
+		(enum http_cancel_test_type)data->setup_data;
 	struct evhttp *http = http_setup(&port, data->base, 0);
 
 	if (type & BY_HOST) {
@@ -1422,10 +1422,12 @@ http_cancel_test(void *arg)
 		port = 0;
 		inactive_base = event_base_new();
 		inactive_http = http_setup(&port, inactive_base, 0);
+
+		base_to_fill = inactive_base;
 	}
 
 	if (type & SERVER_TIMEOUT)
-		evcons = http_fill_backlog(inactive_base ?: data->base, port);
+		evcons = http_fill_backlog(base_to_fill, port);
 
 	evcon = evhttp_connection_base_new(
 		data->base, dns_base,
@@ -1474,7 +1476,7 @@ http_cancel_test(void *arg)
 
 	http_free_evcons(evcons);
 	if (type & SERVER_TIMEOUT)
-		evcons = http_fill_backlog(inactive_base ?: data->base, port);
+		evcons = http_fill_backlog(base_to_fill, port);
 
 	req = http_cancel_test_bad_request_new(type, data->base);
 	if (!req)
@@ -1494,7 +1496,7 @@ http_cancel_test(void *arg)
 
 	http_free_evcons(evcons);
 	if (type & SERVER_TIMEOUT)
-		evcons = http_fill_backlog(inactive_base ?: data->base, port);
+		evcons = http_fill_backlog(base_to_fill, port);
 
 	req = http_cancel_test_bad_request_new(type, data->base);
 	if (!req)
@@ -4517,12 +4519,14 @@ struct testcase_t http_testcases[] = {
 	HTTP_N(cancel_by_host_inactive_server, cancel, BY_HOST | INACTIVE_SERVER),
 	HTTP_N(cancel_inactive_server, cancel, INACTIVE_SERVER),
 	HTTP_N(cancel_by_host_no_ns_inactive_server, cancel, BY_HOST | NO_NS | INACTIVE_SERVER),
+#ifndef __FreeBSD__
 	HTTP_N(cancel_by_host_server_timeout, cancel, BY_HOST | INACTIVE_SERVER | SERVER_TIMEOUT),
 	HTTP_N(cancel_server_timeout, cancel, INACTIVE_SERVER | SERVER_TIMEOUT),
 	HTTP_N(cancel_by_host_no_ns_server_timeout, cancel, BY_HOST | NO_NS | INACTIVE_SERVER | SERVER_TIMEOUT),
+	HTTP_N(cancel_by_host_ns_timeout_server_timeout, cancel, BY_HOST | NO_NS | NS_TIMEOUT | INACTIVE_SERVER | SERVER_TIMEOUT),
+#endif
 	HTTP_N(cancel_by_host_ns_timeout, cancel, BY_HOST | NO_NS | NS_TIMEOUT),
 	HTTP_N(cancel_by_host_ns_timeout_inactive_server, cancel, BY_HOST | NO_NS | NS_TIMEOUT | INACTIVE_SERVER),
-	HTTP_N(cancel_by_host_ns_timeout_server_timeout, cancel, BY_HOST | NO_NS | NS_TIMEOUT | INACTIVE_SERVER | SERVER_TIMEOUT),
 
 	HTTP(virtual_host),
 	HTTP(post),

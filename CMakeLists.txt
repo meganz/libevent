@@ -36,6 +36,7 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Limited configuratio
 project(libevent C)
 
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
+string(REGEX MATCH "SunOS" SOLARIS "${CMAKE_SYSTEM_NAME}")
 
 
 include(CheckTypeSize)
@@ -71,7 +72,7 @@ set(EVENT_ABI_LIBVERSION
 set(EVENT_PACKAGE_VERSION
     "${EVENT_VERSION_MAJOR}.${EVENT_VERSION_MINOR}.${EVENT_VERSION_PATCH}")
 
-set(EVENT_NUMERIC_VERSION 0x02010500)
+set(EVENT_NUMERIC_VERSION 0x02010600)
 
 # only a subset of names can be used, defaults to "beta"
 set(EVENT_STAGE_NAME ${EVENT_VERSION_STAGE}
@@ -129,6 +130,9 @@ option(EVENT__DISABLE_REGRESS
 option(EVENT__DISABLE_SAMPLES
     "Disable sample files" OFF)
 
+option(EVENT__DISABLE_CLOCK_GETTIME
+    "Do not use clock_gettime even if it is available" OFF)
+
 option(EVENT__FORCE_KQUEUE_CHECK
     "When crosscompiling forces running a test program that verifies that Kqueue works with pipes. Note that this requires you to manually run the test program on the the cross compilation target to verify that it works. See cmake documentation for try_run for more details" OFF)
 
@@ -143,7 +147,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 
 if (EVENT__ENABLE_VERBOSE_DEBUG)
-    add_definitions(-DUSE_DBUG=1)
+    add_definitions(-DUSE_DEBUG=1)
 endif()
 
 # Setup compiler flags for coverage.
@@ -213,6 +217,9 @@ if(WIN32)
     set(CMAKE_EXTRA_INCLUDE_FILES winsock2.h ws2tcpip.h)
     set(CMAKE_REQUIRED_LIBRARIES  ws2_32.lib)
     set(CMAKE_REQUIRED_DEFINITIONS -FIwinsock2.h -FIws2tcpip.h)
+endif()
+if (SOLARIS)
+    set(CMAKE_REQUIRED_LIBRARIES socket nsl)
 endif()
 
 # Check if _GNU_SOURCE is available.
@@ -288,12 +295,15 @@ CHECK_INCLUDE_FILE(sys/wait.h EVENT__HAVE_SYS_WAIT_H)
 CHECK_INCLUDE_FILE(sys/resource.h EVENT__HAVE_SYS_RESOURCE_H)
 CHECK_INCLUDE_FILE(sys/sysctl.h EVENT__HAVE_SYS_SYSCTL_H)
 CHECK_INCLUDE_FILE(sys/timerfd.h EVENT__HAVE_SYS_TIMERFD_H)
+CHECK_INCLUDE_FILE(errno.h EVENT__HAVE_ERRNO_H)
 
 
 CHECK_FUNCTION_EXISTS_EX(epoll_create EVENT__HAVE_EPOLL)
 CHECK_FUNCTION_EXISTS_EX(epoll_ctl EVENT__HAVE_EPOLL_CTL)
 CHECK_FUNCTION_EXISTS_EX(eventfd EVENT__HAVE_EVENTFD)
-CHECK_FUNCTION_EXISTS_EX(clock_gettime EVENT__HAVE_CLOCK_GETTIME)
+if(NOT EVENT__DISABLE_CLOCK_GETTIME)
+    CHECK_FUNCTION_EXISTS_EX(clock_gettime EVENT__HAVE_CLOCK_GETTIME)
+endif()
 CHECK_FUNCTION_EXISTS_EX(fcntl EVENT__HAVE_FCNTL)
 CHECK_FUNCTION_EXISTS_EX(getaddrinfo EVENT__HAVE_GETADDRINFO)
 CHECK_FUNCTION_EXISTS_EX(getnameinfo EVENT__HAVE_GETNAMEINFO)
@@ -480,6 +490,8 @@ CHECK_TYPE_SIZE("void *" EVENT__SIZEOF_VOID_P)
 
 #CHECK_FILE_OFFSET_BITS()
 #set(EVENT___FILE_OFFSET_BITS _FILE_OFFSET_BITS)
+
+include(CheckWaitpidSupportWNOWAIT)
 
 # Verify kqueue works with pipes.
 if (EVENT__HAVE_KQUEUE)
@@ -701,7 +713,7 @@ if (NOT EVENT__DISABLE_TESTS)
     # Zlib is only used for testing.
     find_package(ZLIB)
 
-    if (ZLIB_LIBRARY)
+    if (ZLIB_LIBRARY AND ZLIB_INCLUDE_DIR)
         include_directories(${ZLIB_INCLUDE_DIRS})
 
         set(EVENT__HAVE_ZLIB 1)
@@ -729,7 +741,6 @@ if(WIN32)
         buffer_iocp.c
         bufferevent_async.c
         event_iocp.c
-        evthread_win32.c
         win32select.c)
 
     list(APPEND HDR_PRIVATE WIN32-Code/getopt.h)
@@ -745,6 +756,10 @@ endif()
 
 if (UNIX)
     list(APPEND LIB_PLATFORM m)
+endif()
+
+if (SOLARIS)
+    list(APPEND LIB_PLATFORM socket nsl)
 endif()
 
 source_group("Headers Private"  FILES ${HDR_PRIVATE})
@@ -929,9 +944,10 @@ if (NOT EVENT__DISABLE_TESTS)
     if (NOT EVENT__DISABLE_REGRESS)
 
         # (We require python to generate the regress tests)
+        set(PYTHON_EXECUTABLE "python2")
         find_package(PythonInterp)
 
-        if (PYTHONINTERP_FOUND AND PYTHON_VERSION_STRING VERSION_LESS "3.0.0")
+        if (PYTHONINTERP_FOUND)
             set(__FOUND_USABLE_PYTHON 1)
         endif()
 
@@ -973,14 +989,16 @@ if (NOT EVENT__DISABLE_TESTS)
 
             if (WIN32)
                 list(APPEND SRC_REGRESS test/regress_iocp.c)
-                list(APPEND SRC_REGRESS test/regress_thread.c)
+                if (NOT EVENT__DISABLE_THREAD_SUPPORT)
+                    list(APPEND SRC_REGRESS test/regress_thread.c)
+                endif()
             endif()
 
             if (CMAKE_USE_PTHREADS_INIT)
                 list(APPEND SRC_REGRESS test/regress_thread.c)
             endif()
 
-            if (ZLIB_LIBRARY)
+            if (ZLIB_LIBRARY AND ZLIB_INCLUDE_DIR)
                 list(APPEND SRC_REGRESS test/regress_zlib.c)
             endif()
 
@@ -1405,9 +1423,9 @@ set(LIBEVENT_LIBRARIES
         event_extra
         CACHE STRING "Libevent libraries")
 
-message("")
-message("        ---( Libevent " ${EVENT_VERSION} " )---")
-message("")
+message(STATUS "")
+message(STATUS "        ---( Libevent " ${EVENT_VERSION} " )---")
+message(STATUS "")
 message(STATUS "Available event backends: ${BACKENDS}")
 message(STATUS "CMAKE_BINARY_DIR:         " ${CMAKE_BINARY_DIR})
 message(STATUS "CMAKE_CURRENT_BINARY_DIR: " ${CMAKE_CURRENT_BINARY_DIR})
@@ -1429,5 +1447,5 @@ message(STATUS "CMAKE_BUILD_TYPE:         " ${CMAKE_BUILD_TYPE} )
 message(STATUS "CMAKE_C_COMPILER:         " ${CMAKE_C_COMPILER} )
 message(STATUS "CMAKE_AR:                 " ${CMAKE_AR} )
 message(STATUS "CMAKE_RANLIB:             " ${CMAKE_RANLIB} )
-message("")
+message(STATUS "")
 
