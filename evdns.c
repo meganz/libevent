@@ -83,6 +83,9 @@
 #endif
 #include <shlobj.h>
 #endif
+#ifdef __ANDROID__
+    #include <sys/system_properties.h>
+#endif
 
 #include "event2/dns.h"
 #include "event2/dns_struct.h"
@@ -3959,6 +3962,12 @@ evdns_base_new(struct event_base *event_base, int flags)
 		int r;
 #ifdef _WIN32
 		r = evdns_base_config_windows_nameservers(base);
+#elif defined (__ANDROID__)
+/* Android does not often have a local resolver, and no resolv.conf. Use getProp */
+        char droidDns[PROP_VALUE_MAX];
+        if (__system_property_get("net.dns1", droidDns)>0) {
+            evdns_base_nameserver_ip_add(base,droidDns);
+        }
 #else
 		r = evdns_base_resolv_conf_parse(base, DNS_OPTIONS_ALL, "/etc/resolv.conf");
 #endif
