@@ -85,6 +85,8 @@
 #endif
 #ifdef __ANDROID__
     #include <sys/system_properties.h>
+#elif defined(__APPLE__) && defined(__arm__)
+    #include <resolv.h>
 #endif
 
 #include "event2/dns.h"
@@ -3964,10 +3966,37 @@ evdns_base_new(struct event_base *event_base, int flags)
 		r = evdns_base_config_windows_nameservers(base);
 #elif defined (__ANDROID__)
 /* Android does not often have a local resolver, and no resolv.conf. Use getProp */
-        char droidDns[PROP_VALUE_MAX];
-        if (__system_property_get("net.dns1", droidDns)>0) {
-            evdns_base_nameserver_ip_add(base,droidDns);
+        char server[PROP_VALUE_MAX];
+        if (__system_property_get("net.dns1", server) > 0) {
+            evdns_base_nameserver_ip_add(base, server);
+            r = 1;
         }
+#elif defined __APPLE__ && defined(__arm__)
+        struct __res_state res;
+        res_ninit(&res);
+        union res_sockaddr_union addrs[MAXNS];
+        int count = res_getservers(&res, addrs, MAXNS);
+        if (count > 0) {
+            if (addrs->sin.sin_family == AF_INET) {
+                if (!addrs->sin.sin_port) {
+                    addrs->sin.sin_port = 53;
+                }
+                evdns_base_nameserver_sockaddr_add(base, (struct sockaddr*)(&addrs->sin), sizeof(struct sockaddr_in), 0);
+                r = 1;
+            } else if (addrs->sin6.sin6_family == AF_INET6) {
+                if (!addrs->sin6.sin6_port) {
+                    addrs->sin6.sin6_port = 53;
+                }
+                evdns_base_nameserver_sockaddr_add(base, (struct sockaddr*)(&addrs->sin6), sizeof(struct sockaddr_in6), 0);
+                r = 1;
+            } else {
+                r = -1;
+                fprintf(stderr, "Unknown address family for DNS server.");
+            }
+        } else {
+            r = -1;
+        }
+        res_nclose(&res);
 #else
 		r = evdns_base_resolv_conf_parse(base, DNS_OPTIONS_ALL, "/etc/resolv.conf");
 #endif
