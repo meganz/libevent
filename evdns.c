@@ -3986,19 +3986,22 @@ evdns_base_new(struct event_base *event_base, int flags)
                 }
                 evdns_base_nameserver_sockaddr_add(base, (struct sockaddr*)(&addrs->sin), sizeof(struct sockaddr_in), 0);
                 r = 1;
+                /*
                 const char* str = inet_ntoa(addrs->sin.sin_addr);
                 printf("added ipv4 DNS server '%s'\n", str);
+                */
             } else if (addrs->sin6.sin6_family == AF_INET6) {
                 if (!addrs->sin6.sin6_port) {
                     addrs->sin6.sin6_port = 53;
                 }
                 evdns_base_nameserver_sockaddr_add(base, (struct sockaddr*)(&addrs->sin6), sizeof(struct sockaddr_in6), 0);
                 r = 1;
+                /*
                 char buf[256];
                 const char* str = inet_ntop(AF_INET6, &addrs->sin6.sin6_addr, buf, 255);
                 buf[255] = 0;
                 printf("added ipv6 DNS server '%s'\n", str);
-
+                */
             } else {
                 r = -1;
                 fprintf(stderr, "Unknown address family for DNS server.");
