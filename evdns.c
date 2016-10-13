@@ -85,8 +85,11 @@
 #endif
 #ifdef __ANDROID__
     #include <sys/system_properties.h>
-#elif defined(__APPLE__) && defined(__arm__)
-    #include <resolv.h>
+#elif defined(__APPLE__)
+    #include <TargetConditionals.h>
+    #ifdef TARGET_OS_IPHONE
+        #include <resolv.h>
+    #endif
 #endif
 
 #include "event2/dns.h"
@@ -3971,7 +3974,7 @@ evdns_base_new(struct event_base *event_base, int flags)
             evdns_base_nameserver_ip_add(base, server);
             r = 1;
         }
-#elif defined __APPLE__ && defined(__arm__)
+#elif defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
         struct __res_state res;
         res_ninit(&res);
         union res_sockaddr_union addrs[MAXNS];
